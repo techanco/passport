@@ -3,21 +3,22 @@ var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
+
+//追加モジュール
+var mongoose = require('mongoose');
 var passport = require('passport');
 var LocalStrategy = require('passport-local').Strategy;
 var bodyParser = require('body-parser');
-var mongoose = require('mongoose');
 var session = require('express-session');
-var indexRouter = require('./routes/index');
-var usersRouter = require('./routes/users');
 
+const User = require('./models/user');
 const accountUser = require('./models/account_user');
 const accountGroup = require('./models/account_group');
 
 // MongoDB
-mongoose.connect("mongodb://localhost/sra_watson");
+mongoose.connect("mongodb://localhost/book-store");
 
-accountUser.find({}, function (err, docs) {
+User.find({}, function (err, docs) {
   if (!err) {
     console.log("num of item => " + docs.length)
     for (var i = 0; i < docs.length; i++) {
@@ -30,49 +31,24 @@ accountUser.find({}, function (err, docs) {
   }
 });
 
-// // パスワードのハッシュ値を求めるために必要なもの
-// var getHash = function(target){
-//     var sha = crypto.createHmac("sha256", process.env.PASSWORD_HASH_KEY);
-//     sha.update(target);
-//     return sha.digest("hex");
-// };
-
-passport.serializeUser(function (user, done) {
-  done(null, user);
-});
-
-passport.deserializeUser(function (user, done) {
-  done(null, user);
-});
-
-var passport = require('passport')
-  , LocalStrategy = require('passport-local').Strategy;
-
 passport.use(new LocalStrategy(
   function (username, password, done) {
-    User.findOne({ username: username }, function (err, user) {
+    accountUser.findOne({ "name": username }, function (err, user) {
       if (err) { return done(err); }
       if (!user) {
-        return done(null, false, { message: 'ユーザーIDが正しくありません。' });
+        return done(null, false, { message: 'ユーザーIDが間違っています。' });
       }
       if (!user.validPassword(password)) {
-        return done(null, false, { message: 'パスワードが正しくありません。' });
+        return done(null, false, { message: 'パスワードが間違っています。' });
       }
+      //var passwordHash = util.getPasswordHash(password);
+      //if (!user || user.password_hash != passwordHash) {
+      //  return done(null, false, request.flash("message", "ユーザー名とパスワードが一致しません。"));
+      //}
       return done(null, user);
     });
   }
 ));
-
-// 認可処理。指定されたロールを持っているかどうか判定します。
-var authorize = function (role) {
-  return function (request, response, next) {
-    if (request.isAuthenticated() &&
-      request.user.role === role) {
-      return next();
-    }
-    response.redirect("/account/login");
-  };
-};
 
 var app = express();
 
@@ -86,10 +62,33 @@ app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
+function isAuthenticated(req, res, next) {
+  if (req.isAuthenticated()) {  // 認証済
+    return next();
+  }
+  else {  // 認証されていない
+    res.redirect('/login');  // ログイン画面に遷移
+  }
+}
+
 // ルーティング設定
+app.get('/', isAuthenticated, function (req, res) {
+  res.render('index');
+});
+
 app.get('/login', function (req, res) {
   res.render('login');
 });
+
+app.use(bodyParser.urlencoded({ extended: true }));
+
+app.post('/login',
+  passport.authenticate('local', {
+    successRedirect: '/',
+    failureRedirect: '/login',
+    failureFlash: true
+  })
+);
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
