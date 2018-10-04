@@ -31,41 +31,23 @@ passport.deserializeUser(function (user, done) {
   done(null, user);
 });
 
-passport.use(
-  "local-login",
-  new LocalStrategy({
-    usernameField: "userName",
-    passwordField: "password",
-    passReqToCallback: true
-  }, function (request, username, password, done) {
-    process.nextTick(() => {
-      accountUser.findOne({ "user_name": username }, function (error, user) {
-        if (error) {
-          return done(error);
-        }
-        var passwordHash = util.getPasswordHash(password);
-        if (!user || user.password_hash != passwordHash) {
-          return done(null, false, request.flash("message", "ユーザー名とパスワードが一致しません。"));
-        }
-        // ユーザーに紐づくグループを取得します
-        accountGroup.findOne({ "group_id": user.group_id }, function (err, group) {
-          if (err || group === null) {
-            return done(err);
-          } else {
-            return done(null, {
-              id: user.user_id,
-              name: user.user_name,
-              display_name: user.display_name,
-              role: user.role,
-              group_id: user.group_id,
-              group: group,
-            });
-          }
-        });
-      });
+var passport = require('passport')
+  , LocalStrategy = require('passport-local').Strategy;
+
+passport.use(new LocalStrategy(
+  function (username, password, done) {
+    User.findOne({ username: username }, function (err, user) {
+      if (err) { return done(err); }
+      if (!user) {
+        return done(null, false, { message: 'ユーザーIDが正しくありません。' });
+      }
+      if (!user.validPassword(password)) {
+        return done(null, false, { message: 'パスワードが正しくありません。' });
+      }
+      return done(null, user);
     });
-  })
-);
+  }
+));
 
 // 認可処理。指定されたロールを持っているかどうか判定します。
 var authorize = function (role) {
@@ -91,28 +73,9 @@ app.use(cookieParser());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ルーティング設定
-app.use("/", (function () {
-  var router = express.Router();
-  router.get("/home/index", function (request, response) {
-    response.render("./home/index.ejs");
-  });
-  router.get("/account/login", function (request, response) {
-    response.render("./account/login.ejs", { message: request.flash("message") });
-  });
-  router.post("/account/login", passport.authenticate(
-    "local-login", {
-      successRedirect: "/account/profile",
-      failureRedirect: "/account/login"
-    }));
-  router.post("/account/logout", authorize("group1"), function (request, response) {
-    request.logout();
-    response.redirect("/home/index");
-  });
-  router.get("/account/profile", authorize("group1"), function (request, response) {
-    response.render("./account/profile.ejs");
-  });
-  return router;
-})());
+app.get('/login', function (req, res) {
+  res.render('login');
+});
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
