@@ -1,24 +1,24 @@
-var createError = require('http-errors');
-var express = require('express');
-var path = require('path');
-var cookieParser = require('cookie-parser');
-var logger = require('morgan');
-
-//追加モジュール
-var mongoose = require('mongoose');
-var passport = require('passport');
-var LocalStrategy = require('passport-local').Strategy;
-var bodyParser = require('body-parser');
+var express = require("express");
+var cookieParser = require("cookie-parser");
+var bodyParser = require("body-parser");
 var flash = require("connect-flash");
-var session = require('express-session');
+var session = require("express-session");
+var mongoose = require("mongoose");
+var passport = require("passport");
+var LocalStrategy = require("passport-local").Strategy;
+var User = require("./models/user.js");
 
-const User = require('./models/user');
-const accountUser = require('./models/account_user');
-const accountGroup = require('./models/account_group');
+mongoose.connect("mongodb://localhost/book-store",
+  function (err) {
+    if (err) {
+      console.log(err);
+    } else {
+      console.log('connection success!');
+    }
+  }
+);
 
-// MongoDB 接続先設定
-mongoose.connect("mongodb://localhost/sample");
-
+/* ターミナルでMongoDBに保存されているデータを教示する。*/
 User.find({}, function (err, docs) {
   if (!err) {
     console.log("num of item => " + docs.length)
@@ -32,22 +32,19 @@ User.find({}, function (err, docs) {
   }
 });
 
-// passport が ユーザー情報をシリアライズすると呼び出されます
-passport.serializeUser(function (id, done) {
-  done(null, id);
+//sessionにユーザー情報を格納する処理
+passport.serializeUser(function (user, done) {
+  done(null, user);
+  console.log(user);
 });
 
-// passport が ユーザー情報をデシリアライズすると呼び出されます
-passport.deserializeUser(function (id, done) {
-  User.findById(id, (error, user) => {
-    if (error) {
-      return done(error);
-    }
-    done(null, user);
-  });
+//sessionからユーザ情報を復元する処理
+passport.deserializeUser(function (user, done) {
+  done(null, user);
+  console.log(user);
 });
 
-// passport における具体的な認証処理を設定します。
+//todo javascript
 passport.use(
   "local-login",
   new LocalStrategy({
@@ -56,24 +53,25 @@ passport.use(
     passReqToCallback: true
   }, function (request, username, password, done) {
     process.nextTick(() => {
+      //DBのUserテーブルからユーザを検索
       User.findOne({ "email": username }, function (error, user) {
         if (error) {
-          console.log("username");
           return done(error);
         }
         if (!user || user.password != password) {
-          console.log("password");
-          return done(null, false);
+          return done(null, false, request.flash("message", "Invalid username or password."));
         }
-        // 保存するデータは必要最低限にする
-        console.log("success!");
-        return done(null, user._id);
+        return done(null, {
+          id: user.id,
+          name: user.name,
+          role: user.role
+        });
       });
     });
   })
 );
 
-// 認可処理。指定されたロールを持っているかどうか判定します。
+//isAuthenticated
 var authorize = function (role) {
   return function (request, response, next) {
     if (request.isAuthenticated() &&
@@ -84,44 +82,49 @@ var authorize = function (role) {
   };
 };
 
+// express の実態 Application を生成
 var app = express();
 
-// view engine setup
-app.set('views', path.join(__dirname, 'views'));
-app.set('view engine', 'ejs');
+// テンプレートエンジンを EJS に設定
+app.set("views", "./views");
+app.set("view engine", "ejs");
 
-app.use(logger('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: false }));
+// ミドルウェアの設定
+app.use(bodyParser.json());
+app.use(bodyParser.urlencoded({ extended: true }));
 app.use(cookieParser());
-app.use(express.static(path.join(__dirname, 'public')));
+app.use(flash());
+app.use("/public", express.static("public"));
 
-function isAuthenticated(req, res, next) {
-  if (req.isAuthenticated()) {  // 認証済
-    return next();
-  }
-  else {  // 認証されていない
-    res.redirect('/login');  // ログイン画面に遷移
-  }
-}
+// passport設定
+app.use(session({ secret: "some salt", resave: true, saveUninitialized: true }));
+app.use(passport.initialize());
+app.use(passport.session());
 
 // ルーティング設定
-app.get('/', function (req, res) {
-  res.render('index');
-});
-
-app.get('/login', function (req, res) {
-  res.render('login');
-});
-
-app.use(bodyParser.urlencoded({ extended: true }));
-
-app.post("/login", passport.authenticate(
-  "local-login", {
-    successRedirect: "/",
-    failureRedirect: "/login"
-  })
-);
+app.use("/", (function () {
+  var router = express.Router();
+  router.get("/", function (request, response) {
+    response.render("./index.ejs", { title: 'Express' });
+  });
+  router.get("/login", function (request, response) {
+    response.render("./login.ejs", { message: request.flash("message") });
+  });
+  router.post("/login", passport.authenticate(
+    "local-login", {
+      successRedirect: "/",
+      failureRedirect: "/login"
+    })
+  );
+  /* router.post("/account/logout", authorize("group1"), function (request, response) {
+    request.logout();
+    response.redirect("/home/index");
+  });
+  router.get("/account/profile", authorize("group1"), function (request, response) {
+    response.render("./account/profile.ejs", { user: request.user });
+  }); */
+  return router;
+})());
 
 // catch 404 and forward to error handler
 app.use(function (req, res, next) {
