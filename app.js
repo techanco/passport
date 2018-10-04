@@ -71,7 +71,7 @@ passport.use(
 );
 
 //isAuthenticated
-var authorize = function (role) {
+/* var authorize = function (role) {
   return function (request, response, next) {
     if (request.isAuthenticated() &&
       request.user.role === role) {
@@ -79,7 +79,7 @@ var authorize = function (role) {
     }
     response.redirect("/account/login");
   };
-};
+}; */
 
 // express の実態 Application を生成
 var app = express();
@@ -100,50 +100,79 @@ app.use(session({ secret: "some salt", resave: true, saveUninitialized: true }))
 app.use(passport.initialize());
 app.use(passport.session());
 
+/* var sessionCheck = function (req, res, next) {
+  if (req.session.user) {
+    next();
+  } else {
+    res.redirect('/login');
+  }
+} */
+
+/* var multer = require('multer');
+var upload = multer({ dest: './public/images' }).single('thumbnail');
+
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').load();
+}
+
+const storage = require('azure-storage');
+const blobService = storage.createBlobService();
+const containerName = 'srablobtest'; */
+
+
 // ルーティング設定
 app.use("/", (function () {
   var router = express.Router();
+
   router.get("/", function (request, response) {
-    const body = `
-    <!DOCTYPE html>
-    <html>
-      <head>
-        <meta charset="utf-8">
-        <title>express-session</title>
-      </head>
-      <body>
-        <h1>express-session</h1>
-        <h2>session</h2>
-        <ul>
-          <li>session ID: ${request.sessionID}</li>
-          <li>name : ${request.user.name}</li>
-        </ul>
-        <a href="/">tap!</a>
-        <h2>session destroy</h2>
-        <a href="/destroy">session destroy!</a>
-      </body>
-    </html>
-  `
-    response.send(body)
+    response.render("./index.ejs", {
+      session_ID: request.sessionID,
+      user_name: request.user.name
+    });
   });
+
   router.get("/login", function (request, response) {
     response.render("./login.ejs", { message: request.flash("message") });
   });
+
+  router.get('/upload', function (req, res, next) {
+    res.render('upload', { title: 'BLOB Upload' });
+  });
+
+  router.get('/destroy', (request, response) => {
+    request.session.destroy((err) => {
+      if (err) {
+        response.send(err)
+        return
+      }
+      response.redirect('/login')
+    })
+  });
+
   router.post("/login", passport.authenticate(
     "local-login", {
       successRedirect: "/",
       failureRedirect: "/login"
     })
   );
-  router.post("/user", function (request, response) {
 
-  });
-  /* router.post("/account/logout", authorize("group1"), function (request, response) {
-    request.logout();
-    response.redirect("/home/index");
-  });
-  router.get("/account/profile", authorize("group1"), function (request, response) {
-    response.render("./account/profile.ejs", { user: request.user });
+  /* router.post('/', function (req, res) {
+    upload(req, res, function (err) {
+      if (err) {
+        res.send("Failed to write " + req.file.destination + " with " + err);
+      } else {
+        blobService.createBlockBlobFromLocalFile(containerName, req.file.filename, req.file.path, function (error) {
+          res.send('<a href="/">TOP</a>' + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
+            req.file.mimetype + "<p></p>Size: " + req.file.size);
+          if (error) {
+            console.log(error);
+          } else {
+            console.log(' Blob ' + req.file.originalname + ' upload finished.');
+          }
+        }
+        );
+      }
+    });
   }); */
   return router;
 })());
