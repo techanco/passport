@@ -9,14 +9,15 @@ var mongoose = require('mongoose');
 var passport = require('passport');
 var LocalStrategy = require('passport-local').Strategy;
 var bodyParser = require('body-parser');
+var flash = require("connect-flash");
 var session = require('express-session');
 
 const User = require('./models/user');
 const accountUser = require('./models/account_user');
 const accountGroup = require('./models/account_group');
 
-// MongoDB
-mongoose.connect("mongodb://localhost/book-store");
+// MongoDB 接続先設定
+mongoose.connect("mongodb://localhost/sample");
 
 User.find({}, function (err, docs) {
   if (!err) {
@@ -31,24 +32,57 @@ User.find({}, function (err, docs) {
   }
 });
 
-passport.use(new LocalStrategy(
-  function (username, password, done) {
-    accountUser.findOne({ "name": username }, function (err, user) {
-      if (err) { return done(err); }
-      if (!user) {
-        return done(null, false, { message: 'ユーザーIDが間違っています。' });
-      }
-      if (!user.validPassword(password)) {
-        return done(null, false, { message: 'パスワードが間違っています。' });
-      }
-      //var passwordHash = util.getPasswordHash(password);
-      //if (!user || user.password_hash != passwordHash) {
-      //  return done(null, false, request.flash("message", "ユーザー名とパスワードが一致しません。"));
-      //}
-      return done(null, user);
+// passport が ユーザー情報をシリアライズすると呼び出されます
+passport.serializeUser(function (id, done) {
+  done(null, id);
+});
+
+// passport が ユーザー情報をデシリアライズすると呼び出されます
+passport.deserializeUser(function (id, done) {
+  User.findById(id, (error, user) => {
+    if (error) {
+      return done(error);
+    }
+    done(null, user);
+  });
+});
+
+// passport における具体的な認証処理を設定します。
+passport.use(
+  "local-login",
+  new LocalStrategy({
+    usernameField: "username",
+    passwordField: "password",
+    passReqToCallback: true
+  }, function (request, username, password, done) {
+    process.nextTick(() => {
+      User.findOne({ "email": username }, function (error, user) {
+        if (error) {
+          console.log("username");
+          return done(error);
+        }
+        if (!user || user.password != password) {
+          console.log("password");
+          return done(null, false);
+        }
+        // 保存するデータは必要最低限にする
+        console.log("success!");
+        return done(null, user._id);
+      });
     });
-  }
-));
+  })
+);
+
+// 認可処理。指定されたロールを持っているかどうか判定します。
+var authorize = function (role) {
+  return function (request, response, next) {
+    if (request.isAuthenticated() &&
+      request.user.role === role) {
+      return next();
+    }
+    response.redirect("/account/login");
+  };
+};
 
 var app = express();
 
@@ -72,7 +106,7 @@ function isAuthenticated(req, res, next) {
 }
 
 // ルーティング設定
-app.get('/', isAuthenticated, function (req, res) {
+app.get('/', function (req, res) {
   res.render('index');
 });
 
@@ -82,11 +116,10 @@ app.get('/login', function (req, res) {
 
 app.use(bodyParser.urlencoded({ extended: true }));
 
-app.post('/login',
-  passport.authenticate('local', {
-    successRedirect: '/',
-    failureRedirect: '/login',
-    failureFlash: true
+app.post("/login", passport.authenticate(
+  "local-login", {
+    successRedirect: "/",
+    failureRedirect: "/login"
   })
 );
 
