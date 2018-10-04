@@ -3,18 +3,32 @@ var express = require('express');
 var path = require('path');
 var cookieParser = require('cookie-parser');
 var logger = require('morgan');
-
-//追加 passport LocalStragy mongoose
 var passport = require('passport');
 var LocalStrategy = require('passport-local').Strategy;
+var bodyParser = require('body-parser');
 var mongoose = require('mongoose');
 var session = require('express-session');
-
 var indexRouter = require('./routes/index');
 var usersRouter = require('./routes/users');
 
+const accountUser = require('./models/account_user');
+const accountGroup = require('./models/account_group');
+
 // MongoDB
 mongoose.connect("mongodb://localhost/sra_watson");
+
+accountUser.find({}, function (err, docs) {
+  if (!err) {
+    console.log("num of item => " + docs.length)
+    for (var i = 0; i < docs.length; i++) {
+      console.log(docs[i]);
+    }
+    //mongoose.disconnect()  // mongodbへの接続を切断
+    //process.exit()         // node.js終了
+  } else {
+    console.log("find error")
+  }
+});
 
 // // パスワードのハッシュ値を求めるために必要なもの
 // var getHash = function(target){
