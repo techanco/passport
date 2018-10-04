@@ -8,7 +8,7 @@ var passport = require("passport");
 var LocalStrategy = require("passport-local").Strategy;
 var User = require("./models/user.js");
 
-mongoose.connect("mongodb://localhost/book-store",
+mongoose.connect("mongodb://localhost/sample",
   function (err) {
     if (err) {
       console.log(err);
@@ -35,16 +35,15 @@ User.find({}, function (err, docs) {
 //sessionにユーザー情報を格納する処理
 passport.serializeUser(function (user, done) {
   done(null, user);
-  console.log(user);
 });
 
 //sessionからユーザ情報を復元する処理
 passport.deserializeUser(function (user, done) {
   done(null, user);
-  console.log(user);
 });
 
-//todo javascript
+//login.ejsのbodyからログイン名とパスワードを取得
+//findOneを用いてユーザを検索&認証
 passport.use(
   "local-login",
   new LocalStrategy({
@@ -62,7 +61,7 @@ passport.use(
           return done(null, false, request.flash("message", "Invalid username or password."));
         }
         return done(null, {
-          id: user.id,
+          _id: user._id,
           name: user.name,
           role: user.role
         });
@@ -105,7 +104,27 @@ app.use(passport.session());
 app.use("/", (function () {
   var router = express.Router();
   router.get("/", function (request, response) {
-    response.render("./index.ejs", { title: 'Express' });
+    const body = `
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <meta charset="utf-8">
+        <title>express-session</title>
+      </head>
+      <body>
+        <h1>express-session</h1>
+        <h2>session</h2>
+        <ul>
+          <li>session ID: ${request.sessionID}</li>
+          <li>name : ${request.user.name}</li>
+        </ul>
+        <a href="/">tap!</a>
+        <h2>session destroy</h2>
+        <a href="/destroy">session destroy!</a>
+      </body>
+    </html>
+  `
+    response.send(body)
   });
   router.get("/login", function (request, response) {
     response.render("./login.ejs", { message: request.flash("message") });
@@ -116,6 +135,9 @@ app.use("/", (function () {
       failureRedirect: "/login"
     })
   );
+  router.post("/user", function (request, response) {
+
+  });
   /* router.post("/account/logout", authorize("group1"), function (request, response) {
     request.logout();
     response.redirect("/home/index");
