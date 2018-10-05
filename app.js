@@ -51,7 +51,7 @@ passport.deserializeUser(function (user, done) {
  */
 const crypto = require("crypto");
 function getPasswordHash(plainPassword) {
-  var sha = crypto.createHmac("sha256", "");
+  var sha = crypto.createHmac("sha256", process.env.PASSWORD_HASH_KEY);
   sha.update(plainPassword);
   return sha.digest("hex");
 };
@@ -124,14 +124,6 @@ app.use(session({ secret: "some salt", resave: true, saveUninitialized: true }))
 app.use(passport.initialize());
 app.use(passport.session());
 
-/* var sessionCheck = function (req, res, next) {
-  if (req.session.user) {
-    next();
-  } else {
-    res.redirect('/login');
-  }
-} */
-
 var multer = require('multer');
 var upload = multer({ dest: './public/images' }).single('thumbnail');
 
@@ -142,7 +134,6 @@ if (process.env.NODE_ENV !== 'production') {
 const storage = require('azure-storage');
 const blobService = storage.createBlobService();
 const containerName = 'srablobtest';
-
 
 // ルーティング設定
 app.use("/", (function () {
@@ -185,7 +176,7 @@ app.use("/", (function () {
       if (err) {
         res.send("Failed to write " + req.file.destination + " with " + err);
       } else {
-        blobService.createBlockBlobFromLocalFile(containerName, "sample"/* req.file.filename */, req.file.path, function (error) {
+        blobService.createBlockBlobFromLocalFile(containerName, req.file.filename, req.file.path, function (error) {
           res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
             req.file.mimetype + "<p></p>Size: " + req.file.size);
           if (error) {
