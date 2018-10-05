@@ -9,6 +9,21 @@ var LocalStrategy = require("passport-local").Strategy;
 var User = require("./models/user.js");
 const accountUser = require('./models/account_user');
 const accountGroup = require('./models/account_group');
+const Photo = require('./models/photo');
+
+var multer = require('multer');
+var upload = multer({
+  dest: './public/images',
+}).single('thumbnail');
+var Jimp = require("jimp");
+
+if (process.env.NODE_ENV !== 'production') {
+  require('dotenv').load();
+}
+
+const storage = require('azure-storage');
+const blobService = storage.createBlobService();
+const containerName = 'srablobtest';
 
 mongoose.connect("mongodb://localhost/sra_watson",
   function (err) {
@@ -124,17 +139,6 @@ app.use(session({ secret: "some salt", resave: true, saveUninitialized: true }))
 app.use(passport.initialize());
 app.use(passport.session());
 
-var multer = require('multer');
-var upload = multer({ dest: './public/images' }).single('thumbnail');
-
-if (process.env.NODE_ENV !== 'production') {
-  require('dotenv').load();
-}
-
-const storage = require('azure-storage');
-const blobService = storage.createBlobService();
-const containerName = 'srablobtest';
-
 // ルーティング設定
 app.use("/", (function () {
   var router = express.Router();
@@ -176,16 +180,37 @@ app.use("/", (function () {
       if (err) {
         res.send("Failed to write " + req.file.destination + " with " + err);
       } else {
-        blobService.createBlockBlobFromLocalFile(containerName, req.file.filename, req.file.path, function (error) {
-          res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
-            req.file.mimetype + "<p></p>Size: " + req.file.size);
+        blobService.createBlockBlobFromLocalFile(containerName, req.file.originalname, req.file.path, function (error) {
           if (error) {
             console.log(error);
           } else {
-            console.log(' Blob ' + req.file.originalname + ' upload finished.');
+            var photo = new Photo();
+            photo.image_id = req.file.originalname;
+            photo.save(function (err) {
+              if (err) {
+                console.error(err);
+              } else {
+                console.log("userModel saved:")
+              }
+            });
+
+            res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
+              req.file.mimetype + "<p></p>Size: " + req.file.size);
+            /* Jimp.read(req.file.path, function (err, image) {
+              // エラーがなければ、画像の処理をする
+              image.scale(f[0.1, mode]);         // 画像を指定された割合で拡大/縮小します
+            });
+            blobService.createBlockBlobFromLocalFile(containerName, req.file.originalname, image, function (error) {
+              res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
+                req.file.mimetype + "<p></p>Size: " + req.file.size);
+              if (error) {
+                console.log(error);
+              } else {
+                console.log('path' + req.file.path + ' Blob ' + req.file.originalname + ' upload finished.');
+              }
+            }); */
           }
-        }
-        );
+        });
       }
     });
   });
