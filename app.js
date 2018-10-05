@@ -7,8 +7,10 @@ var mongoose = require("mongoose");
 var passport = require("passport");
 var LocalStrategy = require("passport-local").Strategy;
 var User = require("./models/user.js");
+const accountUser = require('./models/account_user');
+const accountGroup = require('./models/account_group');
 
-mongoose.connect("mongodb://localhost/sample",
+mongoose.connect("mongodb://localhost/sra_watson",
   function (err) {
     if (err) {
       console.log(err);
@@ -19,7 +21,7 @@ mongoose.connect("mongodb://localhost/sample",
 );
 
 /* ターミナルでMongoDBに保存されているデータを教示する。*/
-User.find({}, function (err, docs) {
+accountUser.find({}, function (err, docs) {
   if (!err) {
     console.log("num of item => " + docs.length)
     for (var i = 0; i < docs.length; i++) {
@@ -42,6 +44,18 @@ passport.deserializeUser(function (user, done) {
   done(null, user);
 });
 
+/**
+ * 平文パスワードのハッシュ値を取得します。ハッシュに使用するパスワードは「process.env.PASSWORD_HASH_KEY」です。
+ * @param {string} plainPassword 平文パスワード。
+ * @return {string} 平文パスワードのハッシュ値。
+ */
+const crypto = require("crypto");
+function getPasswordHash(plainPassword) {
+  var sha = crypto.createHmac("sha256", "");
+  sha.update(plainPassword);
+  return sha.digest("hex");
+};
+
 //login.ejsのbodyからログイン名とパスワードを取得
 //findOneを用いてユーザを検索&認証
 passport.use(
@@ -53,17 +67,27 @@ passport.use(
   }, function (request, username, password, done) {
     process.nextTick(() => {
       //DBのUserテーブルからユーザを検索
-      User.findOne({ "email": username }, function (error, user) {
+      accountUser.findOne({ "user_name": username }, function (error, user) {
         if (error) {
           return done(error);
         }
-        if (!user || user.password != password) {
+        var passwordHash = getPasswordHash(password);
+        if (!user || user.password_hash != passwordHash) {
           return done(null, false, request.flash("message", "Invalid username or password."));
         }
-        return done(null, {
-          _id: user._id,
-          name: user.name,
-          role: user.role
+        accountGroup.findOne({ "group_id": user.group_id }, function (err, group) {
+          if (err || group === null) {
+            return done(err);
+          } else {
+            return done(null, {
+              id: user.user_id,
+              name: user.user_name,
+              display_name: user.display_name,
+              role: user.role,
+              group_id: user.group_id,
+              group: group,
+            });
+          }
         });
       });
     });
@@ -108,7 +132,7 @@ app.use(passport.session());
   }
 } */
 
-/* var multer = require('multer');
+var multer = require('multer');
 var upload = multer({ dest: './public/images' }).single('thumbnail');
 
 if (process.env.NODE_ENV !== 'production') {
@@ -117,7 +141,7 @@ if (process.env.NODE_ENV !== 'production') {
 
 const storage = require('azure-storage');
 const blobService = storage.createBlobService();
-const containerName = 'srablobtest'; */
+const containerName = 'srablobtest';
 
 
 // ルーティング設定
@@ -156,13 +180,13 @@ app.use("/", (function () {
     })
   );
 
-  /* router.post('/', function (req, res) {
+  router.post('/upload', function (req, res) {
     upload(req, res, function (err) {
       if (err) {
         res.send("Failed to write " + req.file.destination + " with " + err);
       } else {
-        blobService.createBlockBlobFromLocalFile(containerName, req.file.filename, req.file.path, function (error) {
-          res.send('<a href="/">TOP</a>' + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
+        blobService.createBlockBlobFromLocalFile(containerName, "sample"/* req.file.filename */, req.file.path, function (error) {
+          res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
             req.file.mimetype + "<p></p>Size: " + req.file.size);
           if (error) {
             console.log(error);
@@ -173,7 +197,7 @@ app.use("/", (function () {
         );
       }
     });
-  }); */
+  });
   return router;
 })());
 
