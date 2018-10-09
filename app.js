@@ -6,10 +6,12 @@ var session = require("express-session");
 var mongoose = require("mongoose");
 var passport = require("passport");
 var LocalStrategy = require("passport-local").Strategy;
+
 var User = require("./models/user.js");
 const accountUser = require('./models/account_user');
 const accountGroup = require('./models/account_group');
 const Photo = require('./models/photo');
+const Steel_tower_master = require('./models/steel_tower_master');
 
 var multer = require('multer');
 var upload = multer({
@@ -37,7 +39,7 @@ mongoose.connect("mongodb://localhost/sra_watson",
 );
 
 /* ターミナルでMongoDBに保存されているデータを教示する。*/
-accountUser.find({}, function (err, docs) {
+Photo.find({ latitude: { $gte: 171 }, langitude: { $lte: 173 } }, function (err, docs) {
   if (!err) {
     console.log("num of item => " + docs.length)
     for (var i = 0; i < docs.length; i++) {
@@ -200,6 +202,8 @@ app.use("/", (function () {
             var photo = new Photo();
             photo.image_id = req.file.originalname;
             photo.created_by = req.user.name;
+            photo.latitude = 172.172;
+            photo.langitude = 172.172;
             photo.save(function (err) {
               if (err) {
                 console.error(err);
@@ -215,20 +219,22 @@ app.use("/", (function () {
       Jimp.read(req.file.path, function (err, image) {
         if (err) throw err;
         image.resize(300, 200)                     // resize
-          .write("./public/images/small-bw.jpg");  // save
+          .write("./public/images/small-bw.jpg", function () {
+            blobService.createBlockBlobFromLocalFile(containerName, "sample.jpg", "./public/images/small-bw.jpg", function (error) {
+              res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
+                req.file.mimetype + "<p></p>Size: " + req.file.size);
+              if (error) {
+                console.log(error);
+              } else {
+                console.log('path' + req.file.path + ' Blob ' + req.file.originalname + ' upload finished.');
+              }
+            });
+          });  // save
       });
 
-      blobService.createBlockBlobFromLocalFile(containerName, "sample.jpg", "./public/images/small-bw.jpg", function (error) {
-        res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
-          req.file.mimetype + "<p></p>Size: " + req.file.size);
-        if (error) {
-          console.log(error);
-        } else {
-          console.log('path' + req.file.path + ' Blob ' + req.file.originalname + ' upload finished.');
-        }
-      });
     });
   });
+
   return router;
 })());
 
