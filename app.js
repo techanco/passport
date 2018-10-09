@@ -231,8 +231,8 @@ app.use("/", (function () {
 
   router.post('/steelTowerMasterSearch', function (req, res) {
     Photo.find({
-      latitude: { $gte: (req.body.latitude - 1) }, latitude: { $lte: (req.body.latitude + 1) },
-      langitude: { $gte: (req.body.longitude - 1) }, langitude: { $lte: (req.body.longitude + 1) }
+      latitude: { $gte: (req.body.latitude - 0.1) }, latitude: { $lte: (req.body.latitude + 0.1) },
+      langitude: { $gte: (req.body.longitude - 0.1) }, langitude: { $lte: (req.body.longitude + 0.1) }
     }, function (err, docs) {
       if (!err) {
         console.log("num of item => " + docs.length)
@@ -245,7 +245,7 @@ app.use("/", (function () {
         console.log("find error")
       }
     });
-    res.send(req.body.latitude + req.body.longitude);
+    res.send('<a href="/">TOP</a><p></p>' + req.body.latitude + req.body.longitude);
   });
 
   return router;
