@@ -38,19 +38,10 @@ mongoose.connect("mongodb://localhost/sra_watson",
   }
 );
 
-/* ターミナルでMongoDBに保存されているデータを教示する。*/
-Photo.find({ latitude: { $gte: 171 }, langitude: { $lte: 173 } }, function (err, docs) {
-  if (!err) {
-    console.log("num of item => " + docs.length)
-    for (var i = 0; i < docs.length; i++) {
-      console.log(docs[i]);
-    }
-    //mongoose.disconnect()  // mongodbへの接続を切断
-    //process.exit()         // node.js終了
-  } else {
-    console.log("find error")
-  }
-});
+// ターミナルでMongoDBに保存されているデータを表示する.
+/* 
+
+ */
 
 //sessionにユーザー情報を格納する処理
 passport.serializeUser(function (user, done) {
@@ -182,6 +173,10 @@ app.use("/", (function () {
     })
   });
 
+  router.get("/steelTowerMasterSearch", function (req, res, next) {
+    res.render('steelTowerMasterSearch');
+  });
+
   router.post("/login", passport.authenticate(
     "local-login", {
       successRedirect: "/",
@@ -229,10 +224,28 @@ app.use("/", (function () {
                 console.log('path' + req.file.path + ' Blob ' + req.file.originalname + ' upload finished.');
               }
             });
-          });  // save
+          });
       });
-
     });
+  });
+
+  router.post('/steelTowerMasterSearch', function (req, res) {
+    Photo.find({
+      latitude: { $gte: (req.body.latitude - 1) }, latitude: { $lte: (req.body.latitude + 1) },
+      langitude: { $gte: (req.body.longitude - 1) }, langitude: { $lte: (req.body.longitude + 1) }
+    }, function (err, docs) {
+      if (!err) {
+        console.log("num of item => " + docs.length)
+        for (var i = 0; i < docs.length; i++) {
+          console.log(docs[i]);
+        }
+        //mongoose.disconnect()  // mongodbへの接続を切断
+        //process.exit()         // node.js終了
+      } else {
+        console.log("find error")
+      }
+    });
+    res.send(req.body.latitude + req.body.longitude);
   });
 
   return router;
