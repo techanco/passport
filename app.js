@@ -16,6 +16,7 @@ var upload = multer({
   dest: './public/images',
 }).single('thumbnail');
 var Jimp = require("jimp");
+const gm = require('gm');
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').load();
@@ -116,7 +117,7 @@ passport.use(
       request.user.role === role) {
       return next();
     }
-    response.redirect("/account/login");
+    response.redirect("/login");
   };
 }; */
 
@@ -138,6 +139,17 @@ app.use("/public", express.static("public"));
 app.use(session({ secret: "some salt", resave: true, saveUninitialized: true }));
 app.use(passport.initialize());
 app.use(passport.session());
+
+//  セッション情報のチェック
+/*
+var sessionCheck = function (req, res, next) {
+  if (req.user.name) {
+    next();
+  } else {
+    res.redirect('/login');
+  }
+}
+*/
 
 // ルーティング設定
 app.use("/", (function () {
@@ -184,8 +196,10 @@ app.use("/", (function () {
           if (error) {
             console.log(error);
           } else {
+            //写真情報をMongoDBに保存する
             var photo = new Photo();
             photo.image_id = req.file.originalname;
+            photo.created_by = req.user.name;
             photo.save(function (err) {
               if (err) {
                 console.error(err);
@@ -193,25 +207,26 @@ app.use("/", (function () {
                 console.log("userModel saved:")
               }
             });
-
-            res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
-              req.file.mimetype + "<p></p>Size: " + req.file.size);
-            /* Jimp.read(req.file.path, function (err, image) {
-              // エラーがなければ、画像の処理をする
-              image.scale(f[0.1, mode]);         // 画像を指定された割合で拡大/縮小します
-            });
-            blobService.createBlockBlobFromLocalFile(containerName, req.file.originalname, image, function (error) {
-              res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
-                req.file.mimetype + "<p></p>Size: " + req.file.size);
-              if (error) {
-                console.log(error);
-              } else {
-                console.log('path' + req.file.path + ' Blob ' + req.file.originalname + ' upload finished.');
-              }
-            }); */
           }
         });
       }
+
+      //サーバにアップされた原画像を縮小し、原画像と縮小画像をそれぞれAzureに送信する。
+      Jimp.read(req.file.path, function (err, image) {
+        if (err) throw err;
+        image.resize(300, 200)                     // resize
+          .write("./public/images/small-bw.jpg");  // save
+      });
+
+      blobService.createBlockBlobFromLocalFile(containerName, "sample.jpg", "./public/images/small-bw.jpg", function (error) {
+        res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
+          req.file.mimetype + "<p></p>Size: " + req.file.size);
+        if (error) {
+          console.log(error);
+        } else {
+          console.log('path' + req.file.path + ' Blob ' + req.file.originalname + ' upload finished.');
+        }
+      });
     });
   });
   return router;
