@@ -7,7 +7,6 @@ var mongoose = require("mongoose");
 var passport = require("passport");
 var LocalStrategy = require("passport-local").Strategy;
 
-var User = require("./models/user.js");
 const accountUser = require('./models/account_user');
 const accountGroup = require('./models/account_group');
 const Photo = require('./models/photo');
@@ -18,7 +17,6 @@ var upload = multer({
   dest: './public/images',
 }).single('thumbnail');
 var Jimp = require("jimp");
-const gm = require('gm');
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').load();
@@ -104,7 +102,7 @@ passport.use(
 );
 
 //isAuthenticated
-/* var authorize = function (role) {
+var authorize = function (role) {
   return function (request, response, next) {
     if (request.isAuthenticated() &&
       request.user.role === role) {
@@ -112,7 +110,7 @@ passport.use(
     }
     response.redirect("/login");
   };
-}; */
+};
 
 // express の実態 Application を生成
 var app = express();
@@ -129,26 +127,24 @@ app.use(flash());
 app.use("/public", express.static("public"));
 
 // passport設定
-app.use(session({ secret: "some salt", resave: true, saveUninitialized: true }));
+app.use(session({ secret: "some salt", resave: false, saveUninitialized: false }));
 app.use(passport.initialize());
 app.use(passport.session());
 
 //  セッション情報のチェック
-/*
 var sessionCheck = function (req, res, next) {
-  if (req.user.name) {
+  if (req.sessionID && req.user) {
     next();
   } else {
     res.redirect('/login');
   }
 }
-*/
 
 // ルーティング設定
 app.use("/", (function () {
   var router = express.Router();
 
-  router.get("/", function (request, response) {
+  router.get("/", sessionCheck, function (request, response) {
     response.render("./index.ejs", {
       session_ID: request.sessionID,
       user_name: request.user.name
@@ -159,7 +155,7 @@ app.use("/", (function () {
     response.render("./login.ejs", { message: request.flash("message") });
   });
 
-  router.get('/upload', function (req, res, next) {
+  router.get('/upload', sessionCheck, function (req, res, next) {
     res.render('upload', { title: 'BLOB Upload' });
   });
 
@@ -173,7 +169,7 @@ app.use("/", (function () {
     })
   });
 
-  router.get("/steelTowerMasterSearch", function (req, res, next) {
+  router.get("/steelTowerMasterSearch", sessionCheck, function (req, res, next) {
     res.render('steelTowerMasterSearch');
   });
 
@@ -229,10 +225,14 @@ app.use("/", (function () {
     });
   });
 
+  //緯度経度は自動取得、鉄塔IDと名前と路線名でAnd検索
   router.post('/steelTowerMasterSearch', function (req, res) {
-    Photo.find({
-      latitude: { $gte: (req.body.latitude - 0.1) }, latitude: { $lte: (req.body.latitude + 0.1) },
-      langitude: { $gte: (req.body.longitude - 0.1) }, langitude: { $lte: (req.body.longitude + 0.1) }
+    Steel_tower_master.find({
+      id: req.body.steelTowerID,
+      name: req.body.name,
+      route_name: req.body.route_name,
+      //latitude: { $gte: (req.body.latitude - 0.01) }, latitude: { $lte: (req.body.latitude + 0.01) },
+      //longitude: { $gte: (req.body.longitude - 0.01) }, longitude: { $lte: (req.body.longitude + 0.01) }
     }, function (err, docs) {
       if (!err) {
         console.log("num of item => " + docs.length)
