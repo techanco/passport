@@ -1,30 +1,23 @@
-var express = require("express");
-var cookieParser = require("cookie-parser");
-var bodyParser = require("body-parser");
-var flash = require("connect-flash");
-var session = require("express-session");
-var mongoose = require("mongoose");
-var passport = require("passport");
-var LocalStrategy = require("passport-local").Strategy;
-
+const express = require("express");
+const cookieParser = require("cookie-parser");
+const bodyParser = require("body-parser");
+const flash = require("connect-flash");
+const mongoose = require("mongoose");
 const accountUser = require('./models/account_user');
 const accountGroup = require('./models/account_group');
 const Photo = require('./models/photo');
 const Steel_tower_master = require('./models/steel_tower_master');
-
-var multer = require('multer');
-var upload = multer({
-  dest: './public/images',
-}).single('thumbnail');
-var Jimp = require("jimp");
+const multer = require('multer');
+const Jimp = require("jimp");
+const storage = require('azure-storage');
+const session = require("express-session");
+const passport = require("passport");
+const LocalStrategy = require("passport-local").Strategy;
+const crypto = require("crypto");
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').load();
 }
-
-const storage = require('azure-storage');
-const blobService = storage.createBlobService();
-const containerName = 'srablobtest';
 
 mongoose.connect("mongodb://localhost/sra_watson",
   function (err) {
@@ -33,66 +26,59 @@ mongoose.connect("mongodb://localhost/sra_watson",
     } else {
       console.log('connection success!');
     }
-  }
-);
+  });
 
-// ターミナルでMongoDBに保存されているデータを表示する.
-/* 
+var multerStorage = multer.diskStorage(
+  {
+    destination(req, file, cb) {
+      cb(null, './public/images');
+    },
+    filename(req, file, cb) {
+      cb(null, file.originalname);
+    }
+  });
+var upload = multer({ storage: multerStorage }).single('thumbnail');
 
- */
+var blobService = storage.createBlobService();
+var containerName = 'srablobtest';
 
-//sessionにユーザー情報を格納する処理
 passport.serializeUser(function (user, done) {
   done(null, user);
 });
 
-//sessionからユーザ情報を復元する処理
 passport.deserializeUser(function (user, done) {
   done(null, user);
 });
 
-/**
- * 平文パスワードのハッシュ値を取得します。ハッシュに使用するパスワードは「process.env.PASSWORD_HASH_KEY」です。
- * @param {string} plainPassword 平文パスワード。
- * @return {string} 平文パスワードのハッシュ値。
- */
-const crypto = require("crypto");
 function getPasswordHash(plainPassword) {
   var sha = crypto.createHmac("sha256", process.env.PASSWORD_HASH_KEY);
   sha.update(plainPassword);
   return sha.digest("hex");
-};
+}
 
-//login.ejsのbodyからログイン名とパスワードを取得
-//findOneを用いてユーザを検索&認証
 passport.use(
   "local-login",
   new LocalStrategy({
     usernameField: "username",
     passwordField: "password",
     passReqToCallback: true
-  }, function (request, username, password, done) {
+  }, function (req, username, password, done) {
     process.nextTick(() => {
-      //DBのUserテーブルからユーザを検索
       accountUser.findOne({ "user_name": username }, function (error, user) {
         if (error) {
           return done(error);
         }
         var passwordHash = getPasswordHash(password);
         if (!user || user.password_hash != passwordHash) {
-          return done(null, false, request.flash("message", "Invalid username or password."));
+          return done(null, false, req.flash("message", "Invalid username or password."));
         }
         accountGroup.findOne({ "group_id": user.group_id }, function (err, group) {
           if (err || group === null) {
             return done(err);
           } else {
             return done(null, {
-              id: user.user_id,
               name: user.user_name,
-              display_name: user.display_name,
-              role: user.role,
-              group_id: user.group_id,
-              group: group,
+              permissions: group.permissions,
             });
           }
         });
@@ -100,17 +86,6 @@ passport.use(
     });
   })
 );
-
-//isAuthenticated
-var authorize = function (role) {
-  return function (request, response, next) {
-    if (request.isAuthenticated() &&
-      request.user.role === role) {
-      return next();
-    }
-    response.redirect("/login");
-  };
-};
 
 // express の実態 Application を生成
 var app = express();
@@ -126,47 +101,66 @@ app.use(cookieParser());
 app.use(flash());
 app.use("/public", express.static("public"));
 
-// passport設定
-app.use(session({ secret: "some salt", resave: false, saveUninitialized: false }));
+// passportの設定
+app.use(session(
+  {
+    secret: 'keyboard cat',
+    resave: false,
+    saveUninitialized: false,
+    cookie: {
+      maxAge: 1000 * 60 * 30
+    }
+  }));
 app.use(passport.initialize());
 app.use(passport.session());
 
-//  セッション情報のチェック
+//  認証情報のチェック
 var sessionCheck = function (req, res, next) {
-  if (req.sessionID && req.user) {
+  if (req.user) {
     next();
   } else {
     res.redirect('/login');
   }
 }
 
-// ルーティング設定
+var authorize = function (permission) {
+  return function (req, res, next) {
+    if (req.isAuthenticated() &&
+      req.user.permissions === permission) {
+      return next();
+    }
+    res.redirect("/login");
+  };
+}
+
+//ルーティング
 app.use("/", (function () {
   var router = express.Router();
 
-  router.get("/", sessionCheck, function (request, response) {
-    response.render("./index.ejs", {
-      session_ID: request.sessionID,
-      user_name: request.user.name
+  router.get("/", sessionCheck, function (req, res) {
+    res.render("./index.ejs", {
+      session_ID: req.sessionID,
+      user_name: req.user.name,
+      permissions: req.user.permissions
     });
   });
 
-  router.get("/login", function (request, response) {
-    response.render("./login.ejs", { message: request.flash("message") });
+  router.get("/login", function (req, res) {
+    res.render("./login.ejs", { message: req.flash("message") });
+  });
+
+  router.get('/destroy', (req, res) => {
+    req.session.destroy((err) => {
+      if (err) {
+        res.send(err)
+        return
+      }
+      res.redirect('/login')
+    })
   });
 
   router.get('/upload', sessionCheck, function (req, res, next) {
     res.render('upload', { title: 'BLOB Upload' });
-  });
-
-  router.get('/destroy', (request, response) => {
-    request.session.destroy((err) => {
-      if (err) {
-        response.send(err)
-        return
-      }
-      response.redirect('/login')
-    })
   });
 
   router.get("/steelTowerMasterSearch", sessionCheck, function (req, res, next) {
@@ -176,63 +170,76 @@ app.use("/", (function () {
   router.post("/login", passport.authenticate(
     "local-login", {
       successRedirect: "/",
-      failureRedirect: "/login"
+      failureRedirect: "/login",
     })
   );
 
   router.post('/upload', function (req, res) {
+    if (!req.user) {
+      res.status(400).send({ error: 'Something failed!' });
+    }
+
     upload(req, res, function (err) {
       if (err) {
         res.send("Failed to write " + req.file.destination + " with " + err);
       } else {
-        blobService.createBlockBlobFromLocalFile(containerName, req.file.originalname, req.file.path, function (error) {
-          if (error) {
-            console.log(error);
-          } else {
-            //写真情報をMongoDBに保存する
-            var photo = new Photo();
-            photo.image_id = req.file.originalname;
-            photo.created_by = req.user.name;
-            photo.latitude = 172.172;
-            photo.langitude = 172.172;
-            photo.save(function (err) {
-              if (err) {
-                console.error(err);
-              } else {
-                console.log("userModel saved:")
-              }
-            });
-          }
-        });
+        blobService.createBlockBlobFromLocalFile(containerName, req.file.originalname,
+          req.file.path, function (error) {
+            if (error) {
+              res.send(error);
+            } else {
+              console.log("BLOB create!")
+            }
+          });
       }
 
-      //サーバにアップされた原画像を縮小し、原画像と縮小画像をそれぞれAzureに送信する。
+      var array = req.file.originalname.split(".");
+      var thumbnailName = array[0] + "_thumb.jpg";
+
       Jimp.read(req.file.path, function (err, image) {
         if (err) throw err;
-        image.resize(300, 200)                     // resize
-          .write("./public/images/small-bw.jpg", function () {
-            blobService.createBlockBlobFromLocalFile(containerName, "sample.jpg", "./public/images/small-bw.jpg", function (error) {
-              res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: " +
-                req.file.mimetype + "<p></p>Size: " + req.file.size);
-              if (error) {
-                console.log(error);
-              } else {
-                console.log('path' + req.file.path + ' Blob ' + req.file.originalname + ' upload finished.');
-              }
-            });
+        image.resize(300, 200)
+          .write("./public/images/" + thumbnailName, function () {
+            blobService.createBlockBlobFromLocalFile(containerName, thumbnailName,
+              "./public/images/" + thumbnailName, function (error) {
+                if (error) {
+                  res.send(error);
+                } else {
+                  var photo = new Photo();
+                  photo.image_id = req.file.originalname;
+                  photo.thumbnail_id = thumbnailName;
+                  photo.created_by = req.user.name;
+                  photo.latitude = 172.172;
+                  photo.langitude = 172.172;
+                  photo.revel_judged_by_human = 0;
+                  photo.training_flag = 0;
+                  photo.save(function (err) {
+                    if (err) {
+                      console.error(err);
+                    } else {
+                      console.log("userModel saved:")
+                    }
+                  });
+                }
+              });
           });
       });
+      res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name
+        + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: "
+        + req.file.mimetype + "<p></p>Size: " + req.file.size);
     });
   });
 
-  //緯度経度は自動取得、鉄塔IDと名前と路線名でAnd検索
   router.post('/steelTowerMasterSearch', function (req, res) {
+    var range = 0.01;
     Steel_tower_master.find({
       id: req.body.steelTowerID,
       name: req.body.name,
       route_name: req.body.route_name,
-      //latitude: { $gte: (req.body.latitude - 0.01) }, latitude: { $lte: (req.body.latitude + 0.01) },
-      //longitude: { $gte: (req.body.longitude - 0.01) }, longitude: { $lte: (req.body.longitude + 0.01) }
+      latitude: { $gte: (req.body.latitude - range) },
+      latitude: { $lte: (parseFloat(req.body.latitude) + range) },
+      longitude: { $gte: (req.body.longitude - range) },
+      longitude: { $lte: (parseFloat(req.body.longitude) + range) }
     }, function (err, docs) {
       if (!err) {
         console.log("num of item => " + docs.length)
@@ -244,8 +251,8 @@ app.use("/", (function () {
       } else {
         console.log("find error")
       }
+      res.send('<a href="/">TOP</a><p></p>' + docs[0]);
     });
-    res.send('<a href="/">TOP</a><p></p>' + req.body.latitude + req.body.longitude);
   });
 
   return router;
