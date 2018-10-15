@@ -14,6 +14,7 @@ const session = require("express-session");
 const passport = require("passport");
 const LocalStrategy = require("passport-local").Strategy;
 const crypto = require("crypto");
+require('date-utils');
 
 if (process.env.NODE_ENV !== 'production') {
   require('dotenv').load();
@@ -123,6 +124,7 @@ var sessionCheck = function (req, res, next) {
   }
 }
 
+//　権限のチェック
 var authorize = function (permission) {
   return function (req, res, next) {
     if (req.isAuthenticated() &&
@@ -133,7 +135,7 @@ var authorize = function (permission) {
   };
 }
 
-//ルーティング
+//　ルーティング
 app.use("/", (function () {
   var router = express.Router();
 
@@ -167,6 +169,7 @@ app.use("/", (function () {
     res.render('steelTowerMasterSearch');
   });
 
+  //ログイン
   router.post("/login", passport.authenticate(
     "local-login", {
       successRedirect: "/",
@@ -174,16 +177,19 @@ app.use("/", (function () {
     })
   );
 
+  //画像アップロード
   router.post('/upload', function (req, res) {
-    if (!req.user) {
-      res.status(400).send({ error: 'Something failed!' });
-    }
-
     upload(req, res, function (err) {
       if (err) {
         res.send("Failed to write " + req.file.destination + " with " + err);
       } else {
-        blobService.createBlockBlobFromLocalFile(containerName, req.file.originalname,
+        var dt = new Date();
+        var formatted = dt.toFormat("YYYYMMDDHH24MISS");
+        var fileNameArray = req.file.originalname.split(".");
+        var uploadName = formatted + "." + fileNameArray[1];
+        var thumbnailName = formatted + "_thumb." + fileNameArray[1];
+
+        blobService.createBlockBlobFromLocalFile(containerName, uploadName,
           req.file.path, function (error) {
             if (error) {
               res.send(error);
@@ -191,22 +197,17 @@ app.use("/", (function () {
               console.log("BLOB create!")
             }
           });
-      }
 
-      var array = req.file.originalname.split(".");
-      var thumbnailName = array[0] + "_thumb.jpg";
-
-      Jimp.read(req.file.path, function (err, image) {
-        if (err) throw err;
-        image.resize(300, 200)
-          .write("./public/images/" + thumbnailName, function () {
+        Jimp.read(req.file.path, function (err, image) {
+          if (err) throw err;
+          image.scale(0.1).write("./public/images/" + thumbnailName, function () {
             blobService.createBlockBlobFromLocalFile(containerName, thumbnailName,
               "./public/images/" + thumbnailName, function (error) {
                 if (error) {
                   res.send(error);
                 } else {
                   var photo = new Photo();
-                  photo.image_id = req.file.originalname;
+                  photo.image_id = uploadName;
                   photo.thumbnail_id = thumbnailName;
                   photo.created_by = req.user.name;
                   photo.latitude = 172.172;
@@ -223,35 +224,45 @@ app.use("/", (function () {
                 }
               });
           });
-      });
-      res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name
-        + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: "
-        + req.file.mimetype + "<p></p>Size: " + req.file.size);
+        });
+        res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name
+          + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: "
+          + req.file.mimetype + "<p></p>Size: " + req.file.size);
+      }
     });
   });
 
+  //鉄塔検索
   router.post('/steelTowerMasterSearch', function (req, res) {
-    var range = 0.01;
-    Steel_tower_master.find({
+    var arr = {
       id: req.body.steelTowerID,
       name: req.body.name,
       route_name: req.body.route_name,
-      latitude: { $gte: (req.body.latitude - range) },
-      latitude: { $lte: (parseFloat(req.body.latitude) + range) },
-      longitude: { $gte: (req.body.longitude - range) },
-      longitude: { $lte: (parseFloat(req.body.longitude) + range) }
-    }, function (err, docs) {
+      latitude_min: { $gte: (req.body.latitude - range) },
+      latitude_max: { $lte: (parseFloat(req.body.latitude) + range) },
+      longitude_min: { $gte: (req.body.longitude - range) },
+      longitude_max: { $lte: (parseFloat(req.body.longitude) + range) }
+    };
+
+    if (!req.body.steelTowerID) delete arr['id'];
+    if (!req.body.name) delete arr['name'];
+    if (!req.body.route_name) delete arr['route_name'];
+    if (!req.body.latitude) {
+      delete arr['latitude_min'];
+      delete arr['latitude_max'];
+    }
+    if (!req.body.longitude) {
+      delete arr['longitude_min'];
+      delete arr['longitude_max'];
+    }
+
+    var range = 0.01;
+    Steel_tower_master.find(arr, function (err, docs) {
       if (!err) {
-        console.log("num of item => " + docs.length)
-        for (var i = 0; i < docs.length; i++) {
-          console.log(docs[i]);
-        }
-        //mongoose.disconnect()  // mongodbへの接続を切断
-        //process.exit()         // node.js終了
+        res.json(docs);
       } else {
         console.log("find error")
       }
-      res.send('<a href="/">TOP</a><p></p>' + docs[0]);
     });
   });
 
