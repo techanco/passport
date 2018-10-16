@@ -20,6 +20,7 @@ if (process.env.NODE_ENV !== 'production') {
   require('dotenv').load();
 }
 
+//MongoDB
 mongoose.connect("mongodb://localhost/sra_watson",
   function (err) {
     if (err) {
@@ -29,10 +30,11 @@ mongoose.connect("mongodb://localhost/sra_watson",
     }
   });
 
+//Sever upload
 var multerStorage = multer.diskStorage(
   {
     destination(req, file, cb) {
-      cb(null, './public/images');
+      cb(null, './rust/public/images');
     },
     filename(req, file, cb) {
       cb(null, file.originalname);
@@ -40,6 +42,7 @@ var multerStorage = multer.diskStorage(
   });
 var upload = multer({ storage: multerStorage }).single('thumbnail');
 
+//Azure blob
 var blobService = storage.createBlobService();
 var containerName = 'srablobtest';
 
@@ -67,6 +70,7 @@ passport.use(
     process.nextTick(() => {
       accountUser.findOne({ "user_name": username }, function (error, user) {
         if (error) {
+          //mongoDB findOne err
           return done(error);
         }
         var passwordHash = getPasswordHash(password);
@@ -75,6 +79,7 @@ passport.use(
         }
         accountGroup.findOne({ "group_id": user.group_id }, function (err, group) {
           if (err || group === null) {
+            //mongoDB findOne err
             return done(err);
           } else {
             return done(null, {
@@ -115,23 +120,15 @@ app.use(session(
 app.use(passport.initialize());
 app.use(passport.session());
 
-//  認証情報のチェック
-var sessionCheck = function (req, res, next) {
-  if (req.user) {
-    next();
-  } else {
-    res.redirect('/login');
-  }
-}
-
-//　権限のチェック
+//　認証情報、権限のチェック
 var authorize = function (permission) {
   return function (req, res, next) {
-    if (req.isAuthenticated() &&
-      req.user.permissions === permission) {
+    if (req.isAuthenticated() && req.user.permissions.indexOf(permission) >= 0) {
+      console.log(req.isAuthenticated() + permission);
       return next();
     }
-    res.redirect("/login");
+    console.log(req.user.permissions + req.isAuthenticated + permission);
+    res.status(200).send({ "error": "error" });
   };
 }
 
@@ -139,129 +136,127 @@ var authorize = function (permission) {
 app.use("/", (function () {
   var router = express.Router();
 
-  router.get("/", sessionCheck, function (req, res) {
-    res.render("./index.ejs", {
-      session_ID: req.sessionID,
-      user_name: req.user.name,
-      permissions: req.user.permissions
-    });
+  router.get("/", function (req, res) {
+    console.log("top");
+    res.render("./index.ejs");
   });
 
   router.get("/login", function (req, res) {
+    console.log("login");
     res.render("./login.ejs", { message: req.flash("message") });
   });
 
-  router.get('/destroy', (req, res) => {
-    req.session.destroy((err) => {
-      if (err) {
-        res.send(err)
-        return
-      }
-      res.redirect('/login')
-    })
-  });
-
-  router.get('/upload', sessionCheck, function (req, res, next) {
+  router.get('/upload', function (req, res, next) {
     res.render('upload', { title: 'BLOB Upload' });
   });
 
-  router.get("/steelTowerMasterSearch", sessionCheck, function (req, res, next) {
+  router.get("/steel-tower-master-search", function (req, res, next) {
     res.render('steelTowerMasterSearch');
   });
 
   //ログイン
-  router.post("/login", passport.authenticate(
-    "local-login", {
-      successRedirect: "/",
-      failureRedirect: "/login",
-    })
+  router.post("/login", passport.authenticate("local-login", { failureRedirect: "/login" }),
+    function (req, res) {
+      res.json(
+        {
+          "session_id": req.sessionID,
+          "user_name": req.user.name,
+          "permissions": req.user.permissions
+        }
+      );
+    }
   );
 
   //画像アップロード
-  router.post('/upload', function (req, res) {
+  router.post('/upload', authorize("sara_manager"), function (req, res) {
     upload(req, res, function (err) {
       if (err) {
-        res.send("Failed to write " + req.file.destination + " with " + err);
+        //upload エラー処理
+        res.json({ "error": "error" });
       } else {
+        //ファイル名　正規化
         var dt = new Date();
         var formatted = dt.toFormat("YYYYMMDDHH24MISS");
         var fileNameArray = req.file.originalname.split(".");
-        var uploadName = formatted + "." + fileNameArray[1];
-        var thumbnailName = formatted + "_thumb." + fileNameArray[1];
+        if (fileNameArray.length == 1) {
+          var uploadName = formatted;
+          var thumbnailName = formatted + "_thumb";
+        } else {
+          var uploadName = formatted + "." + fileNameArray[fileNameArray.length - 1].toLowerCase();
+          var thumbnailName = formatted + "_thumb." + fileNameArray[fileNameArray.length - 1].toLowerCase();
+        }
 
         blobService.createBlockBlobFromLocalFile(containerName, uploadName,
           req.file.path, function (error) {
             if (error) {
-              res.send(error);
+              //blob登録 エラー処理
+              res.json({ "error": "error" });
             } else {
-              console.log("BLOB create!")
+              console.log("BLOB create!");
             }
           });
 
         Jimp.read(req.file.path, function (err, image) {
-          if (err) throw err;
-          image.scale(0.1).write("./public/images/" + thumbnailName, function () {
-            blobService.createBlockBlobFromLocalFile(containerName, thumbnailName,
-              "./public/images/" + thumbnailName, function (error) {
-                if (error) {
-                  res.send(error);
-                } else {
-                  var photo = new Photo();
-                  photo.image_id = uploadName;
-                  photo.thumbnail_id = thumbnailName;
-                  photo.created_by = req.user.name;
-                  photo.latitude = 172.172;
-                  photo.langitude = 172.172;
-                  photo.revel_judged_by_human = 0;
-                  photo.training_flag = 0;
-                  photo.save(function (err) {
-                    if (err) {
-                      console.error(err);
-                    } else {
-                      console.log("userModel saved:")
-                    }
-                  });
-                }
-              });
-          });
+          if (err) {
+            //jimp-read エラー処理
+            res.json({ "error": "error" });
+          } else {
+            image.scale(0.1).write("./public/images/" + thumbnailName, function () {
+              blobService.createBlockBlobFromLocalFile(containerName, thumbnailName,
+                "./public/images/" + thumbnailName, function (error) {
+                  if (error) {
+                    //blob登録 エラー処理
+                    res.json({ "error": "error" });
+                  } else {
+                    console.log("BLOB create!");
+                    var photo = new Photo();
+                    photo.image_id = uploadName;
+                    photo.thumbnail_id = thumbnailName;
+                    photo.created_by = req.user.name;
+                    photo.latitude = req.body.latitude;
+                    photo.longitude = req.body.longitude;
+                    photo.revel_judged_by_human = req.body.revel_judged_by_human;
+                    photo.training_flag = 0;
+                    photo.save(function (err) {
+                      if (err) {
+                        //写真情報登録　エラー処理
+                        res.json({ "error": "error" });
+                      } else {
+                        console.log("photo info!")
+                        res.json({ "message": "success" });
+                      }
+                    });
+                  }
+                });
+            });
+          }
         });
-        res.send('<a href="/">TOP</a>' + "<p></p>create by " + req.user.name
-          + "<p></p>uploaded " + req.file.originalname + "<p></p>mimetype: "
-          + req.file.mimetype + "<p></p>Size: " + req.file.size);
       }
     });
   });
 
   //鉄塔検索
-  router.post('/steelTowerMasterSearch', function (req, res) {
-    var arr = {
-      id: req.body.steelTowerID,
-      name: req.body.name,
-      route_name: req.body.route_name,
-      latitude_min: { $gte: (req.body.latitude - range) },
-      latitude_max: { $lte: (parseFloat(req.body.latitude) + range) },
-      longitude_min: { $gte: (req.body.longitude - range) },
-      longitude_max: { $lte: (parseFloat(req.body.longitude) + range) }
-    };
-
-    if (!req.body.steelTowerID) delete arr['id'];
-    if (!req.body.name) delete arr['name'];
-    if (!req.body.route_name) delete arr['route_name'];
-    if (!req.body.latitude) {
-      delete arr['latitude_min'];
-      delete arr['latitude_max'];
-    }
-    if (!req.body.longitude) {
-      delete arr['longitude_min'];
-      delete arr['longitude_max'];
-    }
-
+  router.post('/steel-tower-master-search', function (req, res) {
     var range = 0.01;
+
+    var arr = {};
+    if (req.body.steelTowerID) arr['id'] = req.body.steelTowerID;
+    if (req.body.name) arr['name'] = req.body.name;
+    if (req.body.route_name) arr['route_name'] = req.body.route_name;
+    if (req.body.latitude) {
+      arr['latitude'] = { $gte: (req.body.latitude - range), $lte: (parseFloat(req.body.latitude) + range) };
+    }
+    if (req.body.longitude) {
+      arr['longitude'] = { $gte: (req.body.longitude - range), $lte: (parseFloat(req.body.longitude) + range) };
+    }
+
+    console.log(arr);
+
     Steel_tower_master.find(arr, function (err, docs) {
-      if (!err) {
-        res.json(docs);
+      if (err) {
+        res.json({ "error": "error" });
       } else {
-        console.log("find error")
+        res.json(docs);
       }
     });
   });
