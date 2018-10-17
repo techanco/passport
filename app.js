@@ -34,7 +34,7 @@ mongoose.connect("mongodb://localhost/sra_watson",
 var multerStorage = multer.diskStorage(
   {
     destination(req, file, cb) {
-      cb(null, './rust/public/images');
+      cb(null, './public/images');
     },
     filename(req, file, cb) {
       cb(null, file.originalname);
@@ -148,6 +148,10 @@ app.use("/", (function () {
 
   router.get('/upload', function (req, res, next) {
     res.render('upload', { title: 'BLOB Upload' });
+  });
+
+  router.get('/upload-ajax', function (req, res, next) {
+    res.render('upload_ajax', { title: 'BLOB Upload' });
   });
 
   router.get("/steel-tower-master-search", function (req, res, next) {
