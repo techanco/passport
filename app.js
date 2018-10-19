@@ -14,6 +14,8 @@ const session = require("express-session");
 const passport = require("passport");
 const LocalStrategy = require("passport-local").Strategy;
 const crypto = require("crypto");
+const csurf = require("csurf");
+const helmet = require('helmet');
 require('date-utils');
 
 if (process.env.NODE_ENV !== 'production') {
@@ -127,7 +129,6 @@ var authorize = function (permission) {
       console.log(req.isAuthenticated() + permission);
       return next();
     }
-    console.log(req.user.permissions + req.isAuthenticated + permission);
     res.status(200).send({ "error": "error" });
   };
 }
@@ -143,19 +144,25 @@ app.use("/", (function () {
 
   router.get("/login", function (req, res) {
     console.log("login");
-    res.render("./login.ejs", { message: req.flash("message") });
+    res.render("./login.ejs", {
+      message: req.flash("message"),
+    });
   });
 
   router.get('/upload', function (req, res, next) {
-    res.render('upload', { title: 'BLOB Upload' });
+    res.render('upload', {
+      title: 'BLOB Upload',
+    });
   });
 
   router.get('/upload-ajax', function (req, res, next) {
-    res.render('upload_ajax', { title: 'BLOB Upload' });
+    res.render('upload_ajax', {
+    });
   });
 
   router.get("/steel-tower-master-search", function (req, res, next) {
-    res.render('steelTowerMasterSearch');
+    res.render('steelTowerMasterSearch', {
+    });
   });
 
   //ログイン
@@ -176,7 +183,8 @@ app.use("/", (function () {
     upload(req, res, function (err) {
       if (err) {
         //upload エラー処理
-        res.json({ "error": "error" });
+        console.log(err);
+        res.json({ "error": err });
       } else {
         //ファイル名　正規化
         var dt = new Date();
@@ -216,7 +224,7 @@ app.use("/", (function () {
                     var photo = new Photo();
                     photo.image_id = uploadName;
                     photo.thumbnail_id = thumbnailName;
-                    photo.created_by = req.user.name;
+                    //photo.created_by = req.user.name;
                     photo.latitude = req.body.latitude;
                     photo.longitude = req.body.longitude;
                     photo.revel_judged_by_human = req.body.revel_judged_by_human;
